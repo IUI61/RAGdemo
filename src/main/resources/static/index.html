@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>校园智能问答 · RAG 演示</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Microsoft YaHei", system-ui, sans-serif;
+            background: #f2f6fa;
+            color: #2c3e50;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 40px 16px;
+        }
+        .container { width: 100%; max-width: 720px; }
+        header { text-align: center; margin-bottom: 24px; }
+        header h1 { font-size: 26px; color: #1f567e; margin-bottom: 6px; }
+        header p { font-size: 14px; color: #6b7f92; }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(31, 86, 126, 0.08);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .card h2 { font-size: 15px; color: #1f567e; margin-bottom: 12px; border-left: 4px solid #4f9ccc; padding-left: 8px; }
+
+        .upload-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        input[type="file"] { flex: 1; min-width: 200px; font-size: 14px; }
+        input[type="text"] {
+            flex: 1; min-width: 200px;
+            padding: 10px 12px; font-size: 14px;
+            border: 1px solid #d5e2ee; border-radius: 8px;
+            outline: none;
+        }
+        input[type="text"]:focus { border-color: #4f9ccc; }
+        button {
+            padding: 10px 22px; font-size: 14px;
+            background: #4f9ccc; color: #fff;
+            border: none; border-radius: 8px;
+            cursor: pointer; transition: background .2s;
+        }
+        button:hover { background: #3d84b3; }
+        button:disabled { background: #a9c4d8; cursor: not-allowed; }
+
+        .msg { font-size: 13px; margin-top: 10px; color: #1e7a4c; }
+        .msg.error { color: #c0392b; }
+
+        .q-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .suggest {
+            display: inline-block; margin: 6px 6px 0 0;
+            font-size: 12px; color: #4f9ccc;
+            background: #eaf3fb; border: 1px solid #cfe3f3;
+            border-radius: 20px; padding: 5px 12px; cursor: pointer;
+        }
+        .suggest:hover { background: #d5e9f7; }
+
+        .answer { font-size: 15px; line-height: 1.8; white-space: pre-wrap; }
+        .sources { margin-top: 12px; font-size: 12px; color: #6b7f92; }
+        .sources span {
+            display: inline-block; background: #f0f6fb;
+            border-radius: 6px; padding: 3px 8px; margin: 3px 6px 0 0;
+        }
+        .empty { color: #9db4c6; font-size: 14px; }
+        .loading { color: #6b7f92; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>校园宿舍智能问答</h1>
+            <p>RAG 演示：上传 PDF → 提问 → 基于资料回答并标注来源</p>
+        </header>
+
+        <!-- 上传区 -->
+        <div class="card">
+            <h2>① 上传知识文档（PDF）</h2>
+            <div class="upload-row">
+                <input type="file" id="fileInput" accept=".pdf">
+                <button id="uploadBtn" onclick="upload()">上传</button>
+            </div>
+            <div class="msg" id="uploadMsg"></div>
+        </div>
+
+        <!-- 问答区 -->
+        <div class="card">
+            <h2>② 提问</h2>
+            <div class="q-row">
+                <input type="text" id="question" placeholder="例如：宿舍几点关门？" onkeydown="if(event.key==='Enter')ask()">
+                <button id="askBtn" onclick="ask()">提问</button>
+            </div>
+            <div style="margin-top:6px;">
+                <span class="suggest" onclick="quickAsk(this)">宿舍几点关门</span>
+                <span class="suggest" onclick="quickAsk(this)">宿舍能用电磁炉吗</span>
+                <span class="suggest" onclick="quickAsk(this)">外卖送到哪里</span>
+                <span class="suggest" onclick="quickAsk(this)">今天天气怎么样</span>
+            </div>
+            <div id="answerBox" style="margin-top:14px;">
+                <div class="empty">提问后答案会显示在这里，并附上引用的文档页码。</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== 上传 PDF =====
+        async function upload() {
+            const file = document.getElementById('fileInput').files[0];
+            const msg = document.getElementById('uploadMsg');
+            if (!file) { msg.className = 'msg error'; msg.textContent = '请先选择 PDF 文件'; return; }
+
+            const btn = document.getElementById('uploadBtn');
+            btn.disabled = true;
+            msg.className = 'msg';
+            msg.textContent = '上传中...';
+
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/document/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    msg.className = 'msg';
+                    msg.textContent = `入库成功：${data.fileName}，共 ${data.chunkCount} 块`;
+                } else {
+                    msg.className = 'msg error';
+                    msg.textContent = data.message || '上传失败';
+                }
+            } catch (e) {
+                msg.className = 'msg error';
+                msg.textContent = '请求失败：' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ===== 提问 =====
+        async function ask() {
+            const q = document.getElementById('question').value.trim();
+            if (!q) return;
+            const box = document.getElementById('answerBox');
+            const btn = document.getElementById('askBtn');
+
+            btn.disabled = true;
+            box.innerHTML = '<div class="loading">正在检索并生成回答...</div>';
+
+            try {
+                const res = await fetch('/rag/ask?question=' + encodeURIComponent(q));
+                const data = await res.json();
+                if (!res.ok) { box.innerHTML = '<div class="msg error">请求失败：' + (data.message || res.status) + '</div>'; return; }
+
+                let html = '<div class="answer">' + escapeHtml(data.answer) + '</div>';
+                if (data.sources && data.sources.length) {
+                    html += '<div class="sources">引用来源：' + data.sources.map(s =>
+                        '<span>' + escapeHtml(s.file) + ' · 第' + s.page + '页</span>').join('') + '</div>';
+                }
+                box.innerHTML = html;
+            } catch (e) {
+                box.innerHTML = '<div class="msg error">请求失败：' + escapeHtml(e.message) + '</div>';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ===== 快捷问题 =====
+        function quickAsk(el) {
+            document.getElementById('question').value = el.textContent;
+            ask();
+        }
+
+        // 防止答案里的 HTML 被浏览器执行
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+spring:
+  ai:
+    openai:
+      chat:
+        api-key: sk-你的DeepSeekKey
+      embedding:
+        api-key: sk-你的百炼Key
