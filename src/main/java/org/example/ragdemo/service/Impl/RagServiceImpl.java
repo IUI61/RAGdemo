@@ -1,12 +1,16 @@
 package org.example.ragdemo.service.Impl;
 
+
 import org.example.ragdemo.service.RagService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -15,12 +19,29 @@ import java.util.stream.Collectors;
 public class RagServiceImpl implements RagService {
     private final VectorStore vectorStore;
     private final ChatClient chatClient;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 
-    public RagServiceImpl(VectorStore vectorStore, ChatClient.Builder builder) {
+    public RagServiceImpl(VectorStore vectorStore
+            , ChatClient.Builder builder
+            , StringRedisTemplate stringRedisTemplate
+            , ObjectMapper objectMapper) {
         this.vectorStore = vectorStore;
         this.chatClient = builder.build();
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
     }
     public Map<String, Object> ask(String question) {
+        // 从 Redis 缓存中获取问题的答案
+        String redisKey = "rag:docs:" + question;
+        try {
+            String docsJson = stringRedisTemplate.opsForValue().get(redisKey);
+            if(docsJson != null){
+                return objectMapper.readValue(docsJson, Map.class);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         // 第 1 步：向量检索，找最相关的 5 块
         List<Document> docs = vectorStore.similaritySearch(
                 SearchRequest.builder().query(question).topK(5).build());
@@ -49,9 +70,8 @@ public class RagServiceImpl implements RagService {
                 .user(question)
                 .call()
                 .content();
-
-        // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
-        return Map.of(
+        //写入redis
+        Map<String, Object> result = Map.of(
                 "question", question,
                 "answer", answer,
                 "sources", docs.stream()
@@ -59,5 +79,12 @@ public class RagServiceImpl implements RagService {
                                 "page", d.getMetadata().getOrDefault("page_number", "?")))
                         .toList()
         );
+        try {
+            stringRedisTemplate.opsForValue().set(redisKey, objectMapper.writeValueAsString(result), Duration.ofMinutes(5));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
+        return result;
     }
 }

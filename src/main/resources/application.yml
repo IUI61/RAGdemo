@@ -3,6 +3,10 @@ spring:
     name: RAGdemo
   config:
     import: optional:classpath:application-local.yml
+  data:
+    redis:
+      host: localhost
+      port: 6379
   servlet:
     multipart:
       max-file-size: 20MB
