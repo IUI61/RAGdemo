@@ -1,6 +1,7 @@
 package org.example.ragdemo.service.Impl;
 
 
+import lombok.extern.slf4j.Slf4j;
 import org.example.ragdemo.service.RagService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class RagServiceImpl implements RagService {
     private final VectorStore vectorStore;
@@ -44,8 +46,14 @@ public class RagServiceImpl implements RagService {
         }
         // 第 1 步：向量检索，找最相关的 5 块
         List<Document> docs = vectorStore.similaritySearch(
-                SearchRequest.builder().query(question).topK(5).build());
-
+                SearchRequest.builder().query(question).topK(5).similarityThreshold(0.5).build());
+        List<Double> scores = docs.stream().map(d -> {
+            return d.getScore();
+        }).collect(Collectors.toList());
+        log.info("Scores: {}", scores);
+        if(docs.isEmpty()) {
+            return Map.of("question", question, "answer", "根据现有资料无法回答", "sources", List.of());
+        }
         // 第 2 步：把检索到的内容拼成上下文，每块标注文件名和页码
         String context = docs.stream()
                 .map(d -> "[来源: " + d.getMetadata().getOrDefault("file_name", "未知")
