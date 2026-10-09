@@ -124,7 +124,7 @@
                 const data = await res.json();
                 if (res.ok) {
                     msg.className = 'msg';
-                    msg.textContent = `入库成功：${data.fileName}，共 ${data.chunkCount} 块`;
+                    msg.textContent = `已提交：${data.fileName}，后台入库中，稍等片刻再提问`;
                 } else {
                     msg.className = 'msg error';
                     msg.textContent = data.message || '上传失败';
