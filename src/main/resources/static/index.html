@@ -148,16 +148,35 @@
             box.innerHTML = '<div class="loading">正在检索并生成回答...</div>';
 
             try {
-                const res = await fetch('/rag/ask?question=' + encodeURIComponent(q));
-                const data = await res.json();
-                if (!res.ok) { box.innerHTML = '<div class="msg error">请求失败：' + (data.message || res.status) + '</div>'; return; }
-
-                let html = '<div class="answer">' + escapeHtml(data.answer) + '</div>';
+                const res = await fetch('/rag/ask/stream?question=' + encodeURIComponent(q));
+                if (!res.ok || !res.body) { box.innerHTML = '<div class="msg error">请求失败：' + (res.status) + '</div>'; return; }
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                box.innerHTML = '<div class="answer"></div>';
+                const answerEl = box.querySelector('.answer');
+                while (true) {
+                    const { done, value } = await reader.read();  // 每次读一段
+                    if (done) break;                              // done=true 读完了
+                    // value 是 Uint8Array（字节数组）
+                    buffer += decoder.decode(value, { stream: true });   // {stream:true} 处理多字节字符被切断的情况
+                    const lines = buffer.split(/\r?\n/);
+                    buffer = lines.pop();
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        if(line.startsWith('data:')){
+                            answerEl.textContent += line.slice(5);
+                        }
+                    }
+                }
+                if(buffer.startsWith('data:'))
+                    answerEl.textContent += buffer.slice(5);
+                /*let html = '<div class="answer">' + escapeHtml(data.answer) + '</div>';
                 if (data.sources && data.sources.length) {
                     html += '<div class="sources">引用来源：' + data.sources.map(s =>
                         '<span>' + escapeHtml(s.file) + ' · 第' + s.page + '页</span>').join('') + '</div>';
                 }
-                box.innerHTML = html;
+                box.innerHTML = html;*/
             } catch (e) {
                 box.innerHTML = '<div class="msg error">请求失败：' + escapeHtml(e.message) + '</div>';
             } finally {
