@@ -1,22 +1,26 @@
 package org.example.ragdemo.controller;
 
 import org.example.ragdemo.service.RagService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
-
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.json.JsonWriteFeature;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/rag")
 public class RagController {
     private final RagService ragService;
+    private final ObjectMapper objectMapper;
 
-    public RagController(RagService ragService) {
+    public RagController(RagService ragService, ObjectMapper objectMapper) {
         this.ragService = ragService;
+        this.objectMapper = objectMapper;
     }
 
     /** 问答接口：/rag/ask?question=宿舍几点关门 */
@@ -25,8 +29,13 @@ public class RagController {
         return ragService.ask(question);
     }
     @GetMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> askStream(@RequestParam String question) {
-        return ragService.askStream(question);
+    public ResponseEntity<Flux<String>> askStream(@RequestParam String question) {
+        RagService.StreamResult result = ragService.askStream(question);
+        // 响应头只能是 ISO-8859-1 单字节字符,先把中文转义成 uXXXX,避免 Tomcat 编码响应头时报 UnmappableCharacterException
+        String sourcesJson = objectMapper.writer()
+                .with(JsonWriteFeature.ESCAPE_NON_ASCII)
+                .writeValueAsString(result.sources());
+        return ResponseEntity.ok().header("X-Sources", sourcesJson).body(result.flux());
     }
 
 }

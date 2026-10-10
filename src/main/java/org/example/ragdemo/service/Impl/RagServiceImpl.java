@@ -96,13 +96,14 @@ public class RagServiceImpl implements RagService {
         // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
         return result;
     }
-    public Flux<String> askStream(String question) {
+    public StreamResult askStream(String question) {
         // 从 Redis 缓存中获取问题的答案
         String redisKey = "rag:docs:" + question;
         try {
             String docsJson = stringRedisTemplate.opsForValue().get(redisKey);
             if(docsJson != null){
-                return Flux.just(objectMapper.readValue(docsJson, Map.class).get("answer").toString());
+                Map<String, Object> cached = objectMapper.readValue(docsJson, Map.class);
+                return new StreamResult((List) cached.get("sources"), Flux.just(cached.get("answer").toString()));
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -115,7 +116,7 @@ public class RagServiceImpl implements RagService {
         }).collect(Collectors.toList());
         log.info("Scores: {}", scores);
         if(docs.isEmpty()) {
-            return Flux.just("根据现有资料无法回答");
+            return new StreamResult(List.of(), Flux.just("根据现有资料无法回答"));
         }
         // 第 2 步：把检索到的内容拼成上下文，每块标注文件名和页码
         String context = docs.stream()
@@ -129,13 +130,15 @@ public class RagServiceImpl implements RagService {
                 规则：
                 1. 答案必须基于资料内容，不要编造资料里没有的信息。
                 2. 如果资料里没有相关内容，直接回答"根据现有资料无法回答"。
-                3. 回答时在末尾标注信息来源（文件名和页码）。
-
                 资料：
                 %s
                 """.formatted(context);
 
         // 第 4 步：把提示词 + 问题发给 DeepSeek
+        List<Map<String,Object>> sources = docs.stream()
+                .map(d -> Map.of("file", d.getMetadata().getOrDefault("file_name", "未知"),
+                        "page", d.getMetadata().getOrDefault("page_number", "?")))
+                .toList();
         StringBuilder sb = new StringBuilder();
         Flux<String> answer = chatClient.prompt()
                 .system(systemPrompt)
@@ -146,10 +149,7 @@ public class RagServiceImpl implements RagService {
                 .doOnComplete(() -> {Map<String, Object> result = Map.of(
                             "question", question,
                             "answer", sb.toString(),
-                            "sources", docs.stream()
-                                    .map(d -> Map.of("file", d.getMetadata().getOrDefault("file_name", "未知"),
-                                            "page", d.getMetadata().getOrDefault("page_number", "?")))
-                                    .toList()
+                            "sources", sources
                     );try {
                         stringRedisTemplate.opsForValue().set(redisKey, objectMapper.writeValueAsString(result), Duration.ofMinutes(5));
                     } catch (Exception e) {
@@ -157,6 +157,6 @@ public class RagServiceImpl implements RagService {
                     }
                 });  // 流完：写缓存
         // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
-        return answer;
+        return new StreamResult(sources, answer);
     }
 }

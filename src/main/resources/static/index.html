@@ -150,6 +150,8 @@
             try {
                 const res = await fetch('/rag/ask/stream?question=' + encodeURIComponent(q));
                 if (!res.ok || !res.body) { box.innerHTML = '<div class="msg error">请求失败：' + (res.status) + '</div>'; return; }
+                const x = res.headers.get('X-Sources');
+                const sources = x ? JSON.parse(x) : [];
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
@@ -171,12 +173,21 @@
                 }
                 if(buffer.startsWith('data:'))
                     answerEl.textContent += buffer.slice(5);
-                /*let html = '<div class="answer">' + escapeHtml(data.answer) + '</div>';
-                if (data.sources && data.sources.length) {
-                    html += '<div class="sources">引用来源：' + data.sources.map(s =>
-                        '<span>' + escapeHtml(s.file) + ' · 第' + s.page + '页</span>').join('') + '</div>';
+                if (sources && sources.length > 0) {
+                    const seen = new Set();                       // 空集合，装"已见过的 key"
+                    const uniq = sources.filter(s => {
+                        const key = s.file + '|' + s.page;        // 组合成唯一标识，如 "宿舍管理规则.pdf|1"
+                        if (seen.has(key)) return false;          // 见过 → 过滤掉
+                        seen.add(key);                            // 没见过 → 记下来
+                        return true;                              // 保留
+                    });
+// 然后用 uniq 渲染，替代原来的 sources
+                    const htmlStr = '<div class="sources">引用来源：' + uniq.map(u =>
+                        '<span>' + escapeHtml(u.file) + ' · 第' + u.page + '页</span>'
+                    ).join('') + '</div>';
+// beforeend：在box内部末尾插入html，原有内容不变，只新增这一块
+                    box.insertAdjacentHTML('beforeend', htmlStr);
                 }
-                box.innerHTML = html;*/
             } catch (e) {
                 box.innerHTML = '<div class="msg error">请求失败：' + escapeHtml(e.message) + '</div>';
             } finally {
