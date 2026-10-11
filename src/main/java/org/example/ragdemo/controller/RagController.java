@@ -29,8 +29,8 @@ public class RagController {
         return ragService.ask(question);
     }
     @GetMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public ResponseEntity<Flux<String>> askStream(@RequestParam String question) {
-        RagService.StreamResult result = ragService.askStream(question);
+    public ResponseEntity<Flux<String>> askStream(@RequestParam String question,@RequestParam String conversationId) {
+        RagService.StreamResult result = ragService.askStream(question, conversationId);
         // 响应头只能是 ISO-8859-1 单字节字符,先把中文转义成 uXXXX,避免 Tomcat 编码响应头时报 UnmappableCharacterException
         String sourcesJson = objectMapper.writer()
                 .with(JsonWriteFeature.ESCAPE_NON_ASCII)

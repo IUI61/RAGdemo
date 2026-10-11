@@ -7,5 +7,5 @@ import java.util.Map;
 public interface RagService {
     public record StreamResult(List<Map<String, Object>> sources, Flux<String> flux) {}
     Map<String, Object> ask(String question);
-    StreamResult askStream(String question);
+    StreamResult askStream(String question, String conversationId);
 }

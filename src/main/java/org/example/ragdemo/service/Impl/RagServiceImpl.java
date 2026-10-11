@@ -4,6 +4,10 @@ package org.example.ragdemo.service.Impl;
 import lombok.extern.slf4j.Slf4j;
 import org.example.ragdemo.service.RagService;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -24,15 +28,22 @@ public class RagServiceImpl implements RagService {
     private final ChatClient chatClient;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final ChatMemory chatMemory;
+    private final MessageChatMemoryAdvisor advisor;
 
     public RagServiceImpl(VectorStore vectorStore
             , ChatClient.Builder builder
             , StringRedisTemplate stringRedisTemplate
-            , ObjectMapper objectMapper) {
+            , ObjectMapper objectMapper
+            , ChatMemory chatMemory
+            , MessageChatMemoryAdvisor advisor
+    ) {
         this.vectorStore = vectorStore;
         this.chatClient = builder.build();
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
+        this.chatMemory = chatMemory;
+        this.advisor = advisor;
     }
     public Map<String, Object> ask(String question) {
         // 从 Redis 缓存中获取问题的答案
@@ -96,13 +107,17 @@ public class RagServiceImpl implements RagService {
         // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
         return result;
     }
-    public StreamResult askStream(String question) {
+    public StreamResult askStream(String question,String conversationId) {
         // 从 Redis 缓存中获取问题的答案
         String redisKey = "rag:docs:" + question;
         try {
             String docsJson = stringRedisTemplate.opsForValue().get(redisKey);
             if(docsJson != null){
                 Map<String, Object> cached = objectMapper.readValue(docsJson, Map.class);
+                chatMemory.add(conversationId, List.of(
+                        new UserMessage(question),        // ← 包成 UserMessage
+                        new AssistantMessage(cached.get("answer").toString())  // ← 包成 AssistantMessage
+                ));
                 return new StreamResult((List) cached.get("sources"), Flux.just(cached.get("answer").toString()));
             }
         } catch (Exception e) {
@@ -116,6 +131,10 @@ public class RagServiceImpl implements RagService {
         }).collect(Collectors.toList());
         log.info("Scores: {}", scores);
         if(docs.isEmpty()) {
+            chatMemory.add(conversationId, List.of(
+                    new UserMessage(question),        // ← 包成 UserMessage
+                    new AssistantMessage("根据现有资料无法回答")  // ← 包成 AssistantMessage
+            ));
             return new StreamResult(List.of(), Flux.just("根据现有资料无法回答"));
         }
         // 第 2 步：把检索到的内容拼成上下文，每块标注文件名和页码
@@ -141,6 +160,8 @@ public class RagServiceImpl implements RagService {
                 .toList();
         StringBuilder sb = new StringBuilder();
         Flux<String> answer = chatClient.prompt()
+                .advisors(advisor)
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
                 .system(systemPrompt)
                 .user(question)
                 .stream()
@@ -155,6 +176,10 @@ public class RagServiceImpl implements RagService {
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
+                    chatMemory.add(conversationId, List.of(
+                            new UserMessage(question),        // ← 包成 UserMessage
+                            new AssistantMessage(sb.toString())  // ← 包成 AssistantMessage
+                    ));
                 });  // 流完：写缓存
         // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
         return new StreamResult(sources, answer);
