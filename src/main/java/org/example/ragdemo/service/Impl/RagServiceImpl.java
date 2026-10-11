@@ -45,6 +45,7 @@ public class RagServiceImpl implements RagService {
         this.chatMemory = chatMemory;
         this.advisor = advisor;
     }
+    @Override
     public Map<String, Object> ask(String question) {
         // 从 Redis 缓存中获取问题的答案
         String redisKey = "rag:docs:" + question;
@@ -107,6 +108,7 @@ public class RagServiceImpl implements RagService {
         // 返回答案 + 用到的来源列表（前端可以展示"引用了哪几页"）
         return result;
     }
+    @Override
     public StreamResult askStream(String question,String conversationId) {
         // 从 Redis 缓存中获取问题的答案
         String redisKey = "rag:docs:" + question;

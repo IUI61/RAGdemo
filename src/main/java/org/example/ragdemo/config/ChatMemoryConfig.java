@@ -1,5 +1,6 @@
 package org.example.ragdemo.config;
 
+import org.example.ragdemo.repository.RedisChatMemoryRepository;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
@@ -12,10 +13,10 @@ import org.springframework.context.annotation.Configuration;
 public class ChatMemoryConfig {
 
     @Bean
-    public ChatMemory chatMemory() {
+    public ChatMemory chatMemory(RedisChatMemoryRepository redisChatMemoryRepository) {
         MessageWindowChatMemory chatMemory = MessageWindowChatMemory
                 .builder()
-                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .chatMemoryRepository(redisChatMemoryRepository)
                 .maxMessages(15)
                 .build();
         // 用上面的 builder 链，返回 MessageWindowChatMemory
