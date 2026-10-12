@@ -1,0 +1,14 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}        # 服务名 redis，不是 localhost！
+  elasticsearch:
+    uris: ${ES_URIS:http://elasticsearch:9200}   # 服务名 elasticsearch
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}    # 服务名 rabbitmq
+  ai:
+    openai:
+      chat:
+        api-key: ${DEEPSEEK_API_KEY}          # 必填，没有默认值
+      embedding:
+        api-key: ${DASHSCOPE_API_KEY}         # 必填
